@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net"
 )
 
@@ -22,15 +21,21 @@ func main() {
 	defer conn.Close()
 
 	for {
-		data := make([]byte, 1024)
-		_, err = conn.Read(data)
+		resp := NewResp(conn)
+		val, err := resp.Read()
 		if err != nil {
-			if err == io.EOF {
-				fmt.Println("Bye-bye user")
-				break
-			}
-			fmt.Println("Cant user input")
+			fmt.Println("error")
 		}
+		fmt.Println(val)
+		//data := make([]byte, 1024)
+		//_, err = conn.Read(data)
+		//if err != nil {
+		//	if err == io.EOF {
+		//		fmt.Println("Bye-bye user")
+		//		break
+		//	}
+		//	fmt.Println("Cant user input")
+		//}
 		conn.Write([]byte("+ShutUp\r\n"))
 	}
 }
