@@ -2,61 +2,84 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net"
-	"os"
 	"strings"
 )
 
 func main() {
+	fmt.Println("Listening on port :6379")
+
+	// Create a new server
 	l, err := net.Listen("tcp", ":6379")
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	println("Ожидание подключения")
+
+	aof, err := newAof("database.aof")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer aof.Close()
+
+	aof.Read(func(value Value) {
+		command := strings.ToUpper(value.array[0].bulk)
+		args := value.array[1:]
+
+		handler, ok := Handlers[command]
+		if !ok {
+			fmt.Println("Invalid command: ", command)
+			return
+		}
+
+		handler(args)
+	})
+
+	// Listen for connections
 	conn, err := l.Accept()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	println("Connected")
+
 	defer conn.Close()
 
 	for {
 		resp := NewResp(conn)
-		val, err := resp.Read()
+		value, err := resp.Read()
 		if err != nil {
-			if err == io.EOF {
-				fmt.Println("user was disconected")
-				break
-			}
-			fmt.Println("can not get property input from user")
-			os.Exit(0)
+			fmt.Println(err)
+			return
 		}
-		fmt.Println(val)
-		if val.typ != "array" {
-			fmt.Println("Bad Type")
+
+		if value.typ != "array" {
+			fmt.Println("Invalid request, expected array")
 			continue
 		}
-		if len(val.array) == 0 {
-			fmt.Println("Small array")
+
+		if len(value.array) == 0 {
+			fmt.Println("Invalid request, expected array length > 0")
 			continue
 		}
-		command := strings.ToUpper(val.array[0].bulk)
-		args := val.array[1:]
+
+		command := strings.ToUpper(value.array[0].bulk)
+		args := value.array[1:]
+
 		writer := NewWriter(conn)
 
 		handler, ok := Handlers[command]
 		if !ok {
-			fmt.Println("wrong command")
+			fmt.Println("Invalid command: ", command)
 			writer.Write(Value{typ: "string", str: ""})
 			continue
 		}
 
+		if command == "SET" || command == "HSET" {
+			aof.Write(value)
+		}
+
 		result := handler(args)
 		writer.Write(result)
-
 	}
-
 }
